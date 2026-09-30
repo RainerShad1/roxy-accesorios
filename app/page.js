@@ -39,10 +39,11 @@ function Login({ onOk }) {
 
 function App({ onExit }) {
   const [v, setV] = useState('panel'); const [items, setItems] = useState([]); const [mov, setMov] = useState([])
-  const empty = { name: '', qty: '1', cost: '', gain: '', file: null }
+  const empty = { name: '', qty: '1', cost: '', price: '', file: null }
   const [f, setF] = useState(empty); const [k, setK] = useState(0); const [open, setOpen] = useState(false)
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [n, setN] = useState({}); const [t, setT] = useState(null)
   const [rest, setRest] = useState(null); const [rq, setRq] = useState('1')
+  const [edit, setEdit] = useState(null); const [ef, setEf] = useState({ name: '', cost: '', price: '' }); const [eerr, setEerr] = useState('')
 
   const toast = (msg, bad) => { setT({ msg, bad }); clearTimeout(window.__t); window.__t = setTimeout(() => setT(null), 3500) }
   const load = useCallback(async () => {
@@ -57,11 +58,13 @@ function App({ onExit }) {
   }, [load])
 
   async function add() {
-    const name = f.name.trim(), qty = parseInt(f.qty, 10), cost = parseFloat(f.cost), gain = parseFloat(f.gain)
+    const name = f.name.trim(), qty = parseInt(f.qty, 10), cost = parseFloat(f.cost), price = parseFloat(f.price)
     if (!name) return setErr('Escribe el nombre del artículo.')
     if (!(qty > 0)) return setErr('La cantidad debe ser 1 o más.')
     if (!(cost >= 0)) return setErr('Escribe el precio de compra.')
-    if (!(gain >= 0)) return setErr('Escribe la ganancia por unidad.')
+    if (!(price >= 0)) return setErr('Escribe el precio de venta.')
+    if (price < cost) return setErr('El precio de venta no puede ser menor que el de compra.')
+    const gain = Math.round((price - cost) * 100) / 100
     setBusy(true); setErr('')
     let image_url = null
     if (f.file) {
@@ -84,6 +87,18 @@ function App({ onExit }) {
     const { error } = await supabase.rpc('sell_item', { p_id: it.id, p_n: q, p_day: today() })
     if (error) return toast(error.message, true)
     setN(s => ({ ...s, [it.id]: '1' })); toast(`Vendido: ${q} × ${it.name} · ${money((+it.cost + +it.gain) * q)}`); load()
+  }
+  const openEdit = i => { setEdit(i); setEf({ name: i.name, cost: String(i.cost), price: String(+i.cost + +i.gain) }); setEerr('') }
+  async function saveEdit() {
+    const name = ef.name.trim(), cost = parseFloat(ef.cost), price = parseFloat(ef.price)
+    if (!name) return setEerr('Escribe el nombre del artículo.')
+    if (!(cost >= 0)) return setEerr('Escribe el precio de compra.')
+    if (!(price >= 0)) return setEerr('Escribe el precio de venta.')
+    if (price < cost) return setEerr('El precio de venta no puede ser menor que el de compra.')
+    const gain = Math.round((price - cost) * 100) / 100
+    const r = await supabase.from('items').update({ name, cost, gain }).eq('id', edit.id)
+    if (r.error) return setEerr('No se pudo guardar. Intenta de nuevo.')
+    setEdit(null); toast(`Actualizado: ${name}`); load()
   }
   async function restock() {
     const q = parseInt(rq, 10), it = rest
@@ -134,6 +149,7 @@ function App({ onExit }) {
                   <input type="number" inputMode="numeric" min="1" max={i.qty} value={n[i.id] ?? '1'} aria-label="Cantidad a vender" onChange={e => setN(s => ({ ...s, [i.id]: e.target.value }))} />
                   <button className="btn sm" disabled={!i.qty} onClick={() => sell(i)}>Vender</button>
                   <button className="btn sm ghost" onClick={() => { setRest(i); setRq('1') }}>Reponer</button>
+                  <button className="btn sm ghost" onClick={() => openEdit(i)}>Editar</button>
                   <button className="btn sm ghost" onClick={() => del(i)}>Eliminar</button>
                 </div>
               </div>
@@ -170,12 +186,26 @@ function App({ onExit }) {
       <div className="grid3">
         <div><label htmlFor="f-qty">Cantidad</label><input id="f-qty" type="number" inputMode="numeric" min="1" value={f.qty} onChange={e => set('qty', e.target.value)} /></div>
         <div><label htmlFor="f-cost">Compra (c/u)</label><input id="f-cost" type="number" inputMode="decimal" min="0" step="0.01" value={f.cost} onChange={e => set('cost', e.target.value)} /></div>
-        <div><label htmlFor="f-gain">Ganancia (c/u)</label><input id="f-gain" type="number" inputMode="decimal" min="0" step="0.01" value={f.gain} onChange={e => set('gain', e.target.value)} /></div>
+        <div><label htmlFor="f-price">Venta (c/u)</label><input id="f-price" type="number" inputMode="decimal" min="0" step="0.01" value={f.price} onChange={e => set('price', e.target.value)} /></div>
       </div>
+      {f.cost !== '' && f.price !== '' && <p className="mute" style={{ margin: '6px 0 0' }}>Ganancia por unidad: <b className={+f.price >= +f.cost ? 'gain' : ''}>{money(f.price - f.cost)}</b></p>}
       <label htmlFor="f-img">Imagen</label>
       <input key={k} id="f-img" type="file" accept="image/*" onChange={e => set('file', e.target.files[0] || null)} />
       <p className="err" role="alert">{err}</p>
       <button className="btn" disabled={busy} onClick={add}>{busy ? 'Guardando…' : 'Guardar artículo'}</button>
+    </div></div>}
+
+    {edit && <div className="bg" onClick={() => setEdit(null)}><div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Editar artículo">
+      <div className="head"><h2>Editar artículo</h2><button className="link" onClick={() => setEdit(null)}>Cerrar</button></div>
+      <label htmlFor="e-name">Artículo</label>
+      <input id="e-name" type="text" maxLength={60} value={ef.name} onChange={e => setEf(s => ({ ...s, name: e.target.value }))} />
+      <div className="grid3" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div><label htmlFor="e-cost">Compra (c/u)</label><input id="e-cost" type="number" inputMode="decimal" min="0" step="0.01" value={ef.cost} onChange={e => setEf(s => ({ ...s, cost: e.target.value }))} /></div>
+        <div><label htmlFor="e-price">Venta (c/u)</label><input id="e-price" type="number" inputMode="decimal" min="0" step="0.01" value={ef.price} onChange={e => setEf(s => ({ ...s, price: e.target.value }))} /></div>
+      </div>
+      {ef.cost !== '' && ef.price !== '' && <p className="mute" style={{ margin: '6px 0 0' }}>Ganancia por unidad: <b className={+ef.price >= +ef.cost ? 'gain' : ''}>{money(ef.price - ef.cost)}</b></p>}
+      <p className="err" role="alert">{eerr}</p>
+      <button className="btn" onClick={saveEdit}>Guardar cambios</button>
     </div></div>}
 
     {rest && <div className="bg" onClick={() => setRest(null)}><div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Reponer stock">
