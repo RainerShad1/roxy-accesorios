@@ -42,6 +42,7 @@ function App({ onExit }) {
   const empty = { name: '', qty: '1', cost: '', gain: '', file: null }
   const [f, setF] = useState(empty); const [k, setK] = useState(0); const [open, setOpen] = useState(false)
   const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [n, setN] = useState({}); const [t, setT] = useState(null)
+  const [rest, setRest] = useState(null); const [rq, setRq] = useState('1')
 
   const toast = (msg, bad) => { setT({ msg, bad }); clearTimeout(window.__t); window.__t = setTimeout(() => setT(null), 3500) }
   const load = useCallback(async () => {
@@ -84,6 +85,16 @@ function App({ onExit }) {
     if (error) return toast(error.message, true)
     setN(s => ({ ...s, [it.id]: '1' })); toast(`Vendido: ${q} × ${it.name} · ${money((+it.cost + +it.gain) * q)}`); load()
   }
+  async function restock() {
+    const q = parseInt(rq, 10), it = rest
+    if (!(q > 0)) return toast('La cantidad debe ser 1 o más.', true)
+    const cur = await supabase.from('items').select('qty').eq('id', it.id).single()
+    if (cur.error) return toast('No se pudo reponer. Intenta de nuevo.', true)
+    const r = await supabase.from('items').update({ qty: cur.data.qty + q }).eq('id', it.id)
+    if (r.error) return toast('No se pudo reponer. Intenta de nuevo.', true)
+    await supabase.from('movements').insert({ day: today(), inv: it.cost * q, sold: 0, gain: 0, item_name: it.name, qty: q, kind: 'compra' })
+    setRest(null); setRq('1'); toast(`Stock agregado: ${q} × ${it.name}`); load()
+  }
   async function del(it) {
     if (!confirm(`¿Eliminar "${it.name}" del inventario? Las ventas ya registradas se conservan.`)) return
     await supabase.from('items').delete().eq('id', it.id); toast(`Eliminado: ${it.name}`); load()
@@ -122,6 +133,7 @@ function App({ onExit }) {
                 <div className="sell">
                   <input type="number" inputMode="numeric" min="1" max={i.qty} value={n[i.id] ?? '1'} aria-label="Cantidad a vender" onChange={e => setN(s => ({ ...s, [i.id]: e.target.value }))} />
                   <button className="btn sm" disabled={!i.qty} onClick={() => sell(i)}>Vender</button>
+                  <button className="btn sm ghost" onClick={() => { setRest(i); setRq('1') }}>Reponer</button>
                   <button className="btn sm ghost" onClick={() => del(i)}>Eliminar</button>
                 </div>
               </div>
@@ -164,6 +176,14 @@ function App({ onExit }) {
       <input key={k} id="f-img" type="file" accept="image/*" onChange={e => set('file', e.target.files[0] || null)} />
       <p className="err" role="alert">{err}</p>
       <button className="btn" disabled={busy} onClick={add}>{busy ? 'Guardando…' : 'Guardar artículo'}</button>
+    </div></div>}
+
+    {rest && <div className="bg" onClick={() => setRest(null)}><div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Reponer stock">
+      <div className="head"><h2>Reponer stock</h2><button className="link" onClick={() => setRest(null)}>Cerrar</button></div>
+      <p className="mute" style={{ margin: 0 }}>{rest.name} · Stock actual {rest.qty} · Compra {money(rest.cost)} c/u</p>
+      <label htmlFor="r-qty">Cantidad a agregar</label>
+      <input id="r-qty" type="number" inputMode="numeric" min="1" value={rq} onChange={e => setRq(e.target.value)} />
+      <button className="btn" onClick={restock}>Agregar stock</button>
     </div></div>}
 
     {t && <div className={'toast' + (t.bad ? ' bad' : '')} role="status">{t.msg}</div>}

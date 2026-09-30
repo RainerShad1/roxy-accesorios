@@ -32,7 +32,7 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-of
 .item{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
 .item .info{flex:1;min-width:0}
 .item b{font-size:.9rem}
-.sell{display:flex;gap:6px;margin-top:6px;align-items:center}
+.sell{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 .sell input{width:56px;min-height:30px;padding:3px 8px;font-size:.85rem}
 .tbl{width:100%;border-collapse:collapse;font-size:.8rem}
 .tbl th,.tbl td{padding:7px 4px;text-align:right;border-top:1px solid var(--line)}
